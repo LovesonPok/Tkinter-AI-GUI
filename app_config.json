@@ -1,0 +1,14 @@
+{
+  "theme": "Dark",
+  "custom": {
+    "bg": "#40ffff",
+    "fg": "#117c11",
+    "accent": "#4f46e5",
+    "frame_bg": "#f3f444",
+    "textbox_bg": "#ffffff",
+    "textbox_fg": "#111111",
+    "status_bg": "#f37bf6",
+    "status_fg": "#681111",
+    "font_size": 10
+  }
+}
