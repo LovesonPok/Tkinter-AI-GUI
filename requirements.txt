@@ -4,3 +4,4 @@ pillow
 diffusers
 accelerate
 safetensors
+imageio

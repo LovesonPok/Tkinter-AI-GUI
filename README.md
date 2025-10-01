@@ -151,15 +151,15 @@ Team and roles
 
 Project members
 
-- milansapkota16-lang
-- bishalnayabha0
-- lovesonpok
-- suman2120
+- Milan Sapkota (Dhan Prasad Sapkota)
+- Loveson Pokharel
+- Bishal Nayabha
+- Suman Mahat
 
 Suggested roles and responsibilities
 
 - lovesonpok - Project lead and lead backend and performance engineer. He is the main point of contact for architecture decisions and backend implementation. Responsibilities: lead the overall design, implement and optimize model adapters, tune performance for CPU and GPU, manage optional acceleration packages, and coordinate integration testing on target hardware.
-- milansapkota16-lang - Developer and integrator. Responsibilities: work with the lead on adapter design, implement features across adapters, and help with integration and testing.
+- milansapkota1600 - Developer and integrator. Responsibilities: work with the lead on adapter design, implement features across adapters, and help with integration and testing.
 - bishalnayabha0 - UI and user experience lead. Responsibilities: Tkinter layout, input/output widgets, preview behavior, accessibility, and theme tuning.
 - suman2120 - Documentation and testing lead. Responsibilities: README and docs, local setup instructions, troubleshooting guides, and writing small unit or smoke tests to catch regressions.
 
@@ -190,8 +190,7 @@ Extending the project
 
 License and ethical notice
 
-This repository includes code that uses Hugging Face model weights. Respect the licenses associated with the models you are using. Some adapters in the code disable safety filters for development. This is not recommended for public or user-facing deployment.
-
+This repository includes code that uses Hugging Face model weights. Respect the licenses associated with the models you are using. Some adapters in the code disable safety filters for development. 
 Contact and support
 
 If you need help reproducing the environment, contact the project authors listed in the Team and Roles section. Provide a short description of the issue, the output from running the app, and any tracebacks you see.
