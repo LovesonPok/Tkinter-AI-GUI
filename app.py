@@ -208,7 +208,7 @@ class App(tk.Tk):
             return
 
         payload = self.input_frame.get_payload()
-        # Normalize payload: InputFrame returns a dict with mode/image_path/prompt.
+        # Normalize payload: InputFrame returns a dict  with mode/image_path/prompt.
         # Most adapters expect a plain string (prompt or path). Convert here so
         # adapters don't need to handle the UI-shaped dict.
         if isinstance(payload, dict):
