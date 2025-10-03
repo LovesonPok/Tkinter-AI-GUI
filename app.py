@@ -4,6 +4,7 @@ from tkinter import ttk, messagebox
 import threading
 import time
 
+from models.text_to_video import TextToVideoAdapter
 from utils.theme import apply_theme
 from ui.input_frame import InputFrame
 from ui.output_frame import OutputFrame
@@ -15,6 +16,7 @@ from models.text_sentiment import TextSentimentAdapter
 from models.image_classifier import ImageClassifierAdapter
 from models.image_to_text import ImageToTextAdapter
 from models.text_to_image import TextToImageAdapter
+from models.text_to_video import TextToVideoAdapter
 
 
 # Main application class
@@ -38,6 +40,7 @@ class App(tk.Tk):
             "Image Classification": ImageClassifierAdapter(),
             "Image-to-Text": ImageToTextAdapter(),
             "Text-to-Image": TextToImageAdapter(),
+            "Text-to-Video": TextToVideoAdapter()
         }
         self.var_model = tk.StringVar(value="Text Classification")
 
