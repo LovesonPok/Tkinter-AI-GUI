@@ -31,7 +31,7 @@ Quick start
 1. Clone the repository (if you do not already have it locally)
 
 ```bash
-git clone <your-repo-url> tk-hf-gui
+git clone <https://github.com/LovesonPok/Tkinter-AI-GUI> tk-hf-gui
 cd tk-hf-gui
 ```
 
