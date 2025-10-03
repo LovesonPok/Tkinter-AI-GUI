@@ -15,9 +15,9 @@ from models.text_sentiment import TextSentimentAdapter
 from models.image_classifier import ImageClassifierAdapter
 from models.image_to_text import ImageToTextAdapter
 from models.text_to_image import TextToImageAdapter
-from models.text_to_video import TextToVideoAdapter  # comment out if not needed
 
 
+# Main application class
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -32,19 +32,18 @@ class App(tk.Tk):
         self._run_result = None
         self._run_error = None
 
-        # Adapters in the dropdown
+        # Available model adapters
         self.adapters = {
             "Text Classification": TextSentimentAdapter(),
             "Image Classification": ImageClassifierAdapter(),
             "Image-to-Text": ImageToTextAdapter(),
             "Text-to-Image": TextToImageAdapter(),
-           # "Text-to-Video": TextToVideoAdapter(),
         }
         self.var_model = tk.StringVar(value="Text Classification")
 
-        # Base grid weights (responsive)
+        # Responsive layout
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(1, weight=1)  # row with panedwindow will stretch
+        self.rowconfigure(1, weight=1)  # main content row
 
         self._loaded_model_name = None
         self._build_menu()
@@ -80,10 +79,10 @@ class App(tk.Tk):
 
     # ---------- Layout ----------
     def _build_layout(self):
-        # Top bar
+        # Top bar with model selector and load button
         top = ttk.Frame(self)
         top.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
-        top.columnconfigure(2, weight=1)  # spacer
+        top.columnconfigure(2, weight=1)
 
         ttk.Label(top, text="Model:").grid(row=0, column=0, sticky="w")
         self.combo = ttk.Combobox(
@@ -95,12 +94,12 @@ class App(tk.Tk):
         ttk.Button(top, text="Load Model", style="Accent.TButton",
                    command=self.load_selected).grid(row=0, column=3, sticky="w")
 
-        # Progress bar (marquee)
+        # Progress bar for loading/running
         self.progress = ttk.Progressbar(top, mode="indeterminate", length=220)
         self.progress.grid(row=0, column=4, sticky="e")
         self.progress.stop()
 
-        # Split panes
+        # Main split panes for input/output
         mid = ttk.Panedwindow(self, orient="horizontal")
         mid.grid(row=1, column=0, sticky="nsew", padx=12, pady=6)
 
@@ -116,14 +115,15 @@ class App(tk.Tk):
         self.btn_run.pack(side="left", padx=5)
         ttk.Button(btns, text="Clear", command=lambda: self.output_frame.clear()).pack(side="left", padx=5)
 
-        # Info + status
+        # Info panel
         self.info = InfoFrame(self)
         self.info.grid(row=3, column=0, sticky="ew", padx=12, pady=(6, 12))
 
+        # Status bar
         self.status = ttk.Label(self, anchor="w")
         self.status.grid(row=4, column=0, sticky="ew", padx=12, pady=(0, 10))
 
-    # ---------- Shortcuts ----------
+    # ---------- Keyboard Shortcuts ----------
     def _bind_shortcuts(self):
         self.bind_all("<Control-r>", lambda e: self.run_selected())
         self.bind_all("<Control-l>", lambda e: self.load_selected())
@@ -131,11 +131,11 @@ class App(tk.Tk):
         self.bind_all("<Escape>",    lambda e: self._cancel_run())
         self.bind_all("<Control-comma>", lambda e: PreferencesDialog(self))
 
-    # ---------- Busy helpers ----------
+    # ---------- Busy state helpers ----------
     def _set_busy(self, flag: bool, status_text: str = ""):
         self._busy = flag
         if flag:
-            self.progress.start(12)  # faster = smoother
+            self.progress.start(12)  # marquee animation
             self.combo.configure(state="disabled")
             self.btn_run.configure(state="disabled")
         else:
@@ -145,17 +145,14 @@ class App(tk.Tk):
         if status_text:
             self._status(status_text)
 
-    # ---------- Actions ----------
+    # ---------- Load Model ----------
     def load_selected(self):
         if self._busy:
             return
         name = self.var_model.get()
-        # Clear previous output preview immediately so stale images don't remain
-        try:
-            self.output_frame.clear()
-        except Exception:
-            pass
-        # If another model is currently loaded, ask for confirmation before switching
+        self.output_frame.clear()  # clear previous output
+
+        # Confirm switching models if one is loaded
         if self._loaded_model_name and self._loaded_model_name != name:
             confirmed = messagebox.askyesno(
                 "Switch model?",
@@ -165,20 +162,16 @@ class App(tk.Tk):
             if not confirmed:
                 return
 
-            # Clear UI and attempt to unload previous model to free resources
+            # Attempt to unload previous adapter to free resources
             try:
-                # clear UI
                 self.output_frame.clear()
                 self.input_frame.clear()
-                # unload previous adapter internals if possible
                 prev = self.adapters.get(self._loaded_model_name)
                 if prev is not None:
                     if hasattr(prev, "_pipe"):
-                        try: prev._pipe = None
-                        except Exception: pass
+                        prev._pipe = None
                     if hasattr(prev, "_model"):
-                        try: prev._model = None
-                        except Exception: pass
+                        prev._model = None
             except Exception:
                 pass
 
@@ -186,7 +179,7 @@ class App(tk.Tk):
             self._set_busy(True, f"Loading {name} …")
             self.update_idletasks()
             self.adapters[name].load()
-            self.info.set_info(self.adapters[name].info())  # dict or str; InfoFrame handles both
+            self.info.set_info(self.adapters[name].info())
             self._status(f"Loaded {name}")
             messagebox.showinfo("Loaded", f"{name} loaded successfully.")
             self._loaded_model_name = name
@@ -196,37 +189,33 @@ class App(tk.Tk):
         finally:
             self._set_busy(False)
 
+    # ---------- Run Model ----------
     def run_selected(self):
         if self._busy:
             return
         name = self.var_model.get()
         adapter = self.adapters[name]
 
-        # Check either _pipe (diffusers/transformers) or _model (BLIP) exists
         if getattr(adapter, "_pipe", None) is None and not hasattr(adapter, "_model"):
             messagebox.showwarning("Not loaded", f"Please load '{name}' first.")
             return
 
         payload = self.input_frame.get_payload()
-        # Normalize payload: InputFrame returns a dict  with mode/image_path/prompt.
-        # Most adapters expect a plain string (prompt or path). Convert here so
-        # adapters don't need to handle the UI-shaped dict.
+
+        # Normalize payload for adapters
         if isinstance(payload, dict):
             mode = payload.get("mode")
             if mode == "text":
                 norm_payload = payload.get("prompt", "")
-            elif mode == "image":
-                # prefer explicit image_path, fallback to prompt
-                norm_payload = payload.get("image_path") or payload.get("prompt", "")
             else:
-                # unknown mode: pass prompt if available
-                norm_payload = payload.get("prompt", "")
+                norm_payload = payload.get("image_path") or payload.get("prompt", "")
         else:
             norm_payload = payload
+
         self._run_result = None
         self._run_error = None
 
-        # Background thread to avoid freezing UI
+        # Run model in a separate thread to avoid freezing UI
         def _worker():
             try:
                 t0 = time.time()
@@ -243,6 +232,7 @@ class App(tk.Tk):
         self._run_thread.start()
         self.after(80, self._poll_worker, name, adapter)
 
+    # Poll worker thread until done
     def _poll_worker(self, name, adapter):
         if self._run_thread is not None and self._run_thread.is_alive():
             self.after(80, self._poll_worker, name, adapter)
@@ -255,10 +245,7 @@ class App(tk.Tk):
             return
 
         out = self._run_result or {}
-        #  pass the entire dict so OutputFrame can preview image/video
-        self.output_frame.show(out)
-
-        # Update info & status
+        self.output_frame.show(out)  # OutputFrame handles text/image preview
         try:
             self.info.set_info(adapter.info())
         except Exception:
@@ -266,13 +253,13 @@ class App(tk.Tk):
         ms = out.get("_ms")
         self._status(f"Ran {name} in {ms:.1f} ms" if ms else f"Ran {name}")
 
+    # Soft cancel run (cannot kill thread)
     def _cancel_run(self):
-        # Soft cancel: can't kill thread, but re-enable UI & ignore result
         if self._busy:
             self._set_busy(False, "Cancelled (soft)")
             self._run_thread = None
 
-    # ---------- Status ----------
+    # Update status bar
     def _status(self, text: str):
         self.status.config(text=text)
 

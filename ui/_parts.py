@@ -19,10 +19,6 @@ class ThemedScrolledText(ttk.Frame):
         self.vsb.grid(row=0, column=1, sticky="ns")
         self.text.configure(yscrollcommand=self.vsb.set)
 
-        # optional horizontal bar
-        # self.hsb = ttk.Scrollbar(self, orient="horizontal", command=self.text.xview)
-        # self.hsb.grid(row=1, column=0, sticky="ew")
-        # self.text.configure(xscrollcommand=self.hsb.set)
 
     # convenience
     def insert(self, *a, **k): return self.text.insert(*a, **k)
