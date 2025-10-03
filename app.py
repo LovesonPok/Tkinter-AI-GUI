@@ -38,7 +38,7 @@ class App(tk.Tk):
             "Image Classification": ImageClassifierAdapter(),
             "Image-to-Text": ImageToTextAdapter(),
             "Text-to-Image": TextToImageAdapter(),
-            "Text-to-Video": TextToVideoAdapter(),
+           # "Text-to-Video": TextToVideoAdapter(),
         }
         self.var_model = tk.StringVar(value="Text Classification")
 

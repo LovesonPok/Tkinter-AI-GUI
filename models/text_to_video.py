@@ -1,4 +1,3 @@
-# models/text_to_video.py
 import os, re, datetime, numpy as np, torch
 from PIL import Image
 import imageio.v3 as iio
@@ -11,12 +10,14 @@ from diffusers import (
     DPMSolverMultistepScheduler,
 )
 
+
 def _safe(s, n=64):
     return re.sub(r"[^A-Za-z0-9_]+", "_", "_".join(s.split()[:12]) or "video")[:n].strip("_")
 
+
 class TextToVideoAdapter(BaseModelAdapter):
     category    = "Text-to-Video"
-    description = "HQ: SDXL still + Stable Video Diffusion on CUDA/MPS; CPU fallback uses SD1.5 + Ken Burns."
+    description = "Fast mode: SDXL still + Stable Video Diffusion on CUDA/MPS; CPU fallback uses SD1.5 + Ken Burns."
 
     def __init__(self):
         super().__init__()
@@ -30,7 +31,7 @@ class TextToVideoAdapter(BaseModelAdapter):
         os.makedirs("assets", exist_ok=True)
 
         if self._device in ("cuda", "mps"):
-            # --- SDXL for high-quality still ---
+            # --- SDXL for still ---
             self._t2i = StableDiffusionXLPipeline.from_pretrained(
                 "stabilityai/stable-diffusion-xl-base-1.0",
                 torch_dtype=self._dtype,
@@ -43,7 +44,7 @@ class TextToVideoAdapter(BaseModelAdapter):
             self._t2i.to(self._device)
             self._t2i.set_progress_bar_config(disable=True)
 
-            # --- Stable Video Diffusion (img2vid) ---
+            # --- Stable Video Diffusion ---
             self._img2vid = StableVideoDiffusionPipeline.from_pretrained(
                 "stabilityai/stable-video-diffusion-img2vid",
                 torch_dtype=self._dtype,
@@ -51,11 +52,10 @@ class TextToVideoAdapter(BaseModelAdapter):
             ).to(self._device)
             self._img2vid.set_progress_bar_config(disable=True)
 
-            # Mark as loaded for GUI check
             self._pipe = self._t2i
 
         else:
-            # --- CPU fallback: SD 1.5 still (HQ-ish), then Ken Burns ---
+            # --- CPU fallback ---
             self._t2i_cpu = StableDiffusionPipeline.from_pretrained(
                 "runwayml/stable-diffusion-v1-5",
                 torch_dtype=torch.float32,
@@ -65,24 +65,26 @@ class TextToVideoAdapter(BaseModelAdapter):
                 self._t2i_cpu.scheduler = DPMSolverMultistepScheduler.from_config(self._t2i_cpu.scheduler.config)
             except Exception:
                 pass
-            try: self._t2i_cpu.enable_attention_slicing()
-            except Exception: pass
+            try: 
+                self._t2i_cpu.enable_attention_slicing()
+            except Exception: 
+                pass
             self._t2i_cpu.to("cpu")
             self._t2i_cpu.set_progress_bar_config(disable=True)
 
-            self._pipe = self._t2i_cpu  # truthy for GUI check
+            self._pipe = self._t2i_cpu
 
     def info(self):
         return {
-            "Model": "SDXL + Stable Video Diffusion (img2vid)" if self._device in ("cuda","mps")
-                     else "SD 1.5 (CPU fallback) + Ken Burns",
+            "Model": "SDXL + Stable Video Diffusion (fast mode)" if self._device in ("cuda","mps")
+                     else "SD 1.5 (CPU fallback, fast) + Ken Burns",
             "Category": self.category,
             "Description": self.description,
             "Runtime": f"Device: {self._device}, DType: {str(self._dtype).split('.')[-1]}",
         }
 
     # --------- Helpers ---------
-    def _generate_sdxl_still(self, prompt: str, steps=40, cfg=6.5, size=1024):
+    def _generate_sdxl_still(self, prompt: str, steps=20, cfg=6.0, size=512):
         h = w = (size // 8) * 8
         if self._device == "cuda" and self._dtype == torch.float16:
             with torch.autocast("cuda"):
@@ -91,9 +93,9 @@ class TextToVideoAdapter(BaseModelAdapter):
             img = self._t2i(prompt=prompt, num_inference_steps=steps, guidance_scale=cfg, height=h, width=w).images[0]
         return img.convert("RGB")
 
-    def _svd_img2vid(self, img: Image.Image, num_frames=25, fps=14, motion_bucket_id=127, cond_aug=0.02):
-        # SVD prefers 16:9 around 576p; resize SDXL still to 1024x576 for sharper motion
-        vid_w, vid_h = 1024, 576
+    def _svd_img2vid(self, img: Image.Image, num_frames=12, fps=10, motion_bucket_id=127, cond_aug=0.02):
+        # Lower resolution for faster speed
+        vid_w, vid_h = 512, 288
         base = img.resize((vid_w, vid_h), Image.LANCZOS)
 
         if self._device == "cuda" and self._dtype == torch.float16:
@@ -118,16 +120,16 @@ class TextToVideoAdapter(BaseModelAdapter):
             frames = [Image.fromarray(f) for f in frames]
         return frames, fps
 
-    def _cpu_hq_still(self, prompt: str, steps=36, cfg=7.0, size=512):
+    def _cpu_hq_still(self, prompt: str, steps=20, cfg=6.5, size=384):
         h = w = (size // 8) * 8
         img = self._t2i_cpu(
             prompt=prompt,
             negative_prompt="blurry, lowres, bad anatomy, watermark, text, jpeg artifacts, cartoon, illustration",
             num_inference_steps=steps, guidance_scale=cfg, height=h, width=w,
         ).images[0].convert("RGB")
-        return img.resize((768, 768), Image.LANCZOS)
+        return img.resize((512, 512), Image.LANCZOS)
 
-    def _ken_burns(self, img: Image.Image, seconds=3.0, fps=24, zoom_end=1.18, pan=(20, -12)):
+    def _ken_burns(self, img: Image.Image, seconds=2.0, fps=12, zoom_end=1.12, pan=(10, -6)):
         w, h = img.size
         n = int(seconds * fps)
         frames = []
@@ -144,8 +146,7 @@ class TextToVideoAdapter(BaseModelAdapter):
         return frames, fps
 
     # --------- Main run ---------
-    def run(self, payload):
-        # Accept dict or str
+    def run(self, payload, progress_callback=None):
         if isinstance(payload, dict):
             prompt = (payload.get("prompt") or payload.get("text") or "").strip()
         else:
@@ -157,14 +158,22 @@ class TextToVideoAdapter(BaseModelAdapter):
         ts   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         safe = _safe(prompt)
 
+        # ---- CUDA / MPS ----
         if self._device in ("cuda", "mps"):
-            still = self._generate_sdxl_still(prompt, steps=40, cfg=6.5, size=1024)
-            frames, fps = self._svd_img2vid(still, num_frames=25, fps=14, motion_bucket_id=127, cond_aug=0.02)
+            if progress_callback: progress_callback(10, "Generating still image...")
+            still = self._generate_sdxl_still(prompt, steps=20, cfg=6.0, size=512)
+
+            if progress_callback: progress_callback(50, "Animating into video...")
+            frames, fps = self._svd_img2vid(still, num_frames=12, fps=10)
 
             still_path = os.path.join("assets", f"t2v_still_{safe}_{ts}.png")
             still.save(still_path)
             mp4_path   = os.path.join("assets", f"t2v_{safe}_{ts}_svd.mp4")
-            iio.imwrite(mp4_path, [f.convert("RGB") for f in frames], fps=fps, codec="h264", quality=9)
+
+            if progress_callback: progress_callback(80, "Encoding video...")
+            iio.imwrite(mp4_path, [f.convert("RGB") for f in frames], fps=fps, codec="h264", quality=6)
+
+            if progress_callback: progress_callback(100, "Done ✅")
 
             return {
                 "result": f"Video generated → {mp4_path}\nStill: {still_path}",
@@ -172,14 +181,20 @@ class TextToVideoAdapter(BaseModelAdapter):
                 "still_path": still_path,
             }
 
-        # CPU fallback
-        still = self._cpu_hq_still(prompt, steps=36, cfg=7.0, size=512)
+        # ---- CPU fallback ----
+        if progress_callback: progress_callback(10, "Generating still (CPU)...")
+        still = self._cpu_hq_still(prompt, steps=20, cfg=6.5, size=384)
         still_path = os.path.join("assets", f"t2v_still_{safe}_{ts}.png")
         still.save(still_path)
 
-        frames, fps = self._ken_burns(still, seconds=3.0, fps=24, zoom_end=1.18, pan=(20, -12))
+        if progress_callback: progress_callback(50, "Applying Ken Burns...")
+        frames, fps = self._ken_burns(still, seconds=2.0, fps=12)
+
         mp4_path = os.path.join("assets", f"t2v_{safe}_{ts}_kb.mp4")
-        iio.imwrite(mp4_path, [f.convert("RGB") for f in frames], fps=fps, codec="h264", quality=9)
+        if progress_callback: progress_callback(80, "Encoding video...")
+        iio.imwrite(mp4_path, [f.convert("RGB") for f in frames], fps=fps, codec="h264", quality=6)
+
+        if progress_callback: progress_callback(100, "Done ✅")
 
         return {
             "result": f"Video generated → {mp4_path}\nStill: {still_path}",
