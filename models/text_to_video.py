@@ -82,18 +82,22 @@ class TextToVideoAdapter(BaseModelAdapter):
         }
 
     # --------- Helpers ---------
-    def _generate_sdxl_still(self, prompt: str, steps=40, cfg=6.5, size=1024):
+    def _generate_sdxl_still(self, prompt: str, steps=15, cfg=6.0, size=512):
+        """Generate a still image with fewer steps & smaller size for faster test"""
         h = w = (size // 8) * 8
         if self._device == "cuda" and self._dtype == torch.float16:
             with torch.autocast("cuda"):
-                img = self._t2i(prompt=prompt, num_inference_steps=steps, guidance_scale=cfg, height=h, width=w).images[0]
+                img = self._t2i(prompt=prompt, num_inference_steps=steps,
+                                guidance_scale=cfg, height=h, width=w).images[0]
         else:
-            img = self._t2i(prompt=prompt, num_inference_steps=steps, guidance_scale=cfg, height=h, width=w).images[0]
+            img = self._t2i(prompt=prompt, num_inference_steps=steps,
+                            guidance_scale=cfg, height=h, width=w).images[0]
         return img.convert("RGB")
 
-    def _svd_img2vid(self, img: Image.Image, num_frames=25, fps=14, motion_bucket_id=127, cond_aug=0.02):
-        # SVD prefers 16:9 around 576p; resize SDXL still to 1024x576 for sharper motion
-        vid_w, vid_h = 1024, 576
+    def _svd_img2vid(self, img: Image.Image, num_frames=12, fps=8,
+                     motion_bucket_id=127, cond_aug=0.05):
+        """Generate shorter, faster video (12 frames at 8fps)"""
+        vid_w, vid_h = 512, 288  # smaller size for speed
         base = img.resize((vid_w, vid_h), Image.LANCZOS)
 
         if self._device == "cuda" and self._dtype == torch.float16:
@@ -118,16 +122,18 @@ class TextToVideoAdapter(BaseModelAdapter):
             frames = [Image.fromarray(f) for f in frames]
         return frames, fps
 
-    def _cpu_hq_still(self, prompt: str, steps=36, cfg=7.0, size=512):
+    def _cpu_hq_still(self, prompt: str, steps=15, cfg=6.0, size=384):
+        """CPU fallback with fewer steps for faster testing"""
         h = w = (size // 8) * 8
         img = self._t2i_cpu(
             prompt=prompt,
-            negative_prompt="blurry, lowres, bad anatomy, watermark, text, jpeg artifacts, cartoon, illustration",
+            negative_prompt="blurry, lowres, bad anatomy, watermark, text",
             num_inference_steps=steps, guidance_scale=cfg, height=h, width=w,
         ).images[0].convert("RGB")
-        return img.resize((768, 768), Image.LANCZOS)
+        return img.resize((512, 512), Image.LANCZOS)
 
-    def _ken_burns(self, img: Image.Image, seconds=3.0, fps=24, zoom_end=1.18, pan=(20, -12)):
+    def _ken_burns(self, img: Image.Image, seconds=2.0, fps=12, zoom_end=1.1, pan=(10, -6)):
+        """Faster CPU fallback video: 2 seconds at 12fps"""
         w, h = img.size
         n = int(seconds * fps)
         frames = []
@@ -142,6 +148,7 @@ class TextToVideoAdapter(BaseModelAdapter):
             frm = img.crop((left, top, left + cw, top + ch)).resize((w, h), Image.LANCZOS)
             frames.append(frm)
         return frames, fps
+
 
     # --------- Main run ---------
     def run(self, payload):
@@ -161,28 +168,28 @@ class TextToVideoAdapter(BaseModelAdapter):
             still = self._generate_sdxl_still(prompt, steps=40, cfg=6.5, size=1024)
             frames, fps = self._svd_img2vid(still, num_frames=25, fps=14, motion_bucket_id=127, cond_aug=0.02)
 
-            still_path = os.path.join("assets", f"t2v_still_{safe}_{ts}.png")
-            still.save(still_path)
+           # still_path = os.path.join("assets", f"t2v_still_{safe}_{ts}.png")
+           # still.save(still_path)
             mp4_path   = os.path.join("assets", f"t2v_{safe}_{ts}_svd.mp4")
             iio.imwrite(mp4_path, [f.convert("RGB") for f in frames], fps=fps, codec="h264", quality=9)
 
             return {
-                "result": f"Video generated → {mp4_path}\nStill: {still_path}",
+                "result": f"Video generated → {mp4_path}",
                 "video_path": mp4_path,
-                "still_path": still_path,
+               # "still_path": still_path,
             }
 
         # CPU fallback
         still = self._cpu_hq_still(prompt, steps=36, cfg=7.0, size=512)
-        still_path = os.path.join("assets", f"t2v_still_{safe}_{ts}.png")
-        still.save(still_path)
+       # still_path = os.path.join("assets", f"t2v_still_{safe}_{ts}.png")
+       # still.save(still_path)
 
         frames, fps = self._ken_burns(still, seconds=3.0, fps=24, zoom_end=1.18, pan=(20, -12))
         mp4_path = os.path.join("assets", f"t2v_{safe}_{ts}_kb.mp4")
         iio.imwrite(mp4_path, [f.convert("RGB") for f in frames], fps=fps, codec="h264", quality=9)
 
         return {
-            "result": f"Video generated → {mp4_path}\nStill: {still_path}",
+            "result": f"Video generated → {mp4_path}",
             "video_path": mp4_path,
-            "still_path": still_path,
+          #  "still_path": still_path,
         }
